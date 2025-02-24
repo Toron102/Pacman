@@ -21,6 +21,7 @@ public class Main {
 		GamePanel gp = new GamePanel();
 		window.add(gp);
 		window.pack();
+		gp.requestFocus();
 		window.setVisible(true);
 		
 

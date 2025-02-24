@@ -2,13 +2,20 @@ package main;
 
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.Graphics;
 import java.awt.Image;
+import java.awt.Rectangle;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
 import java.util.HashSet;
 
 import javax.swing.ImageIcon;
 import javax.swing.JPanel;
+import javax.swing.Timer;
 
-public class GamePanel extends JPanel{
+public class GamePanel extends JPanel implements ActionListener, KeyListener{
 
 	class Block {
 		int x;
@@ -20,6 +27,12 @@ public class GamePanel extends JPanel{
 		int startX;
 		int startY;
 		
+		char direction = 'U';
+		int velocityX = 0;
+		int velocityY = 0;
+		
+		public Rectangle solidArea = new Rectangle(0, 0, 32, 32);
+		
 		Block(Image image, int x, int y, int width, int height){
 			this.image = image;
 			this.x = x;
@@ -28,6 +41,59 @@ public class GamePanel extends JPanel{
 			this.height = height;
 			this.startX = x;
 			this.startY = y;
+		}
+		
+		void updateDirection(char direction) {
+			char prevDirection = this.direction;
+			this.direction = direction;
+			updateVelocity();
+			this.x += this.velocityX;
+			this.y += this.velocityY;
+			
+			for(Block wall : walls) {
+				if(collision(this, wall)) {
+					this.x -= this.velocityX;
+					this.y -= this.velocityY;
+					this.direction = prevDirection;
+					updateVelocity();
+				}
+			}
+		}
+		
+		void updateVelocity() {
+			
+			if(this.direction == 'U') {
+				this.velocityX = 0;
+				this.velocityY = 0;
+				this.velocityY -= tileSize/4;
+				if(this.velocityY < tileSize/4) {
+					this.velocityY = -tileSize/4;
+				}
+			}
+			else if(this.direction == 'D') {
+				this.velocityX = 0;
+				this.velocityY = 0;
+				this.velocityY += tileSize/4;
+				if(this.velocityY > tileSize/4) {
+					this.velocityY = tileSize/4;
+				}
+			}
+			else if(this.direction == 'L') {
+				this.velocityX = 0;
+				this.velocityY = 0;
+				this.velocityX -= tileSize/4;
+				if(this.velocityX < -tileSize/4) {
+					this.velocityX = -tileSize/4;
+				}
+			}
+			else if(this.direction == 'R') {
+				this.velocityX = 0;
+				this.velocityY = 0;
+				this.velocityX += tileSize/4;
+				if(this.velocityX > tileSize/4) {
+					this.velocityX = tileSize/4;
+				}
+			}
 		}
 	}
 	
@@ -79,20 +145,21 @@ public class GamePanel extends JPanel{
 	HashSet<Block> ghosts;
 	Block pacman;
 	
+	Timer gameLoop;
+	
+	
 	public GamePanel() {
 
 		setPreferredSize(new Dimension(boardWidth, boardHeight));
 		setBackground(Color.black);
+		addKeyListener(this);
+		setFocusable(true);
 		
-		//Load images
+		//Load various images
 		wallImage = getImage("/main/res/wall");
-//		wallImage = new ImageIcon(getClass().getResource("./wall.png")).getImage();
 		blueGhostImage = getImage("/main/res/blueGhost");
-//		blueGhostImage = new ImageIcon(getClass().getResource("./blueGhost.png")).getImage();
 		orangeGhostImage = getImage("/main/res/orangeGhost");
-//		orangeGhostImage = new ImageIcon(getClass().getResource("./orangeGhost.png")).getImage();
 		pinkGhostImage = getImage("/main/res/pinkGhost");
-//		pinkGhostImage = new ImageIcon(getClass().getResource("./pinkGhost.png")).getImage();
 		redGhostImage = getImage("/main/res/redGhost");
 		
 		//Load player images
@@ -102,9 +169,9 @@ public class GamePanel extends JPanel{
 		pacmanRightImage = getImage("/main/res/pacmanRight");
 		
 		loadMap();
-		System.out.println(walls.size());
-		System.out.println(foods.size());
-		System.out.println(ghosts.size());
+		//How long it takes to start timer, miliseconds gone between frames
+		gameLoop = new Timer(50, this); // 50 is (1000/50) = 20fps
+		gameLoop.start();
 	}
 	
 	public void loadMap() {
@@ -169,6 +236,94 @@ public class GamePanel extends JPanel{
 			e.printStackTrace();
 		}
 		return image;
+	}
+	
+	public void paintComponent(Graphics g) {
+		super.paintComponent(g);
+		draw(g);
+	}
+	
+	public void draw(Graphics g) {
+		//Draw hero
+		g.drawImage(pacman.image, pacman.x, pacman.y, pacman.width, pacman.height, null);
+		
+		//Draw enemy
+		for(Block ghost : ghosts) {
+			g.drawImage(ghost.image, ghost.x, ghost.y, ghost.width, ghost.height, null);
+		}
+		
+		//Draw enviro
+		for(Block wall : walls) {
+			g.drawImage(wall.image, wall.x, wall.y, wall.width, wall.height, null);
+		}
+		
+		//Draw food
+		
+		g.setColor(Color.white);
+		for(Block food : foods) {
+			g.fillRect(food.x, food.y, food.width, food.height);
+		}
+	}
+	
+	public void move() {
+		pacman.x += pacman.velocityX;
+		pacman.y += pacman.velocityY;
+		
+		//Check wall collision
+		for(Block wall : walls) {
+			if(collision(pacman, wall)) {
+				pacman.x -= pacman.velocityX;
+				pacman.y -= pacman.velocityY;
+				break;
+			}
+		}
+	}
+	
+	public boolean collision(Block a, Block b) {
+		
+		return a.x < b.x + b.width && 
+				a.x + a.width > b.x &&
+				a.y < b.y + b.height &&
+				a.y + a.height > b.y;
+	}
+
+	@Override
+	public void actionPerformed(ActionEvent e) {
+
+		move();
+		repaint();
+		
+	}
+
+	@Override
+	public void keyTyped(KeyEvent e) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void keyPressed(KeyEvent e) {
+		
+	}
+
+	@Override
+	public void keyReleased(KeyEvent e) {
+		
+		
+		if(e.getKeyCode() == KeyEvent.VK_UP) {
+			pacman.updateDirection('U');
+		}
+		else if(e.getKeyCode() == KeyEvent.VK_DOWN) {
+			pacman.updateDirection('D');
+		}
+		else if(e.getKeyCode() == KeyEvent.VK_LEFT) {
+			pacman.updateDirection('L');
+		}
+		else if(e.getKeyCode() == KeyEvent.VK_RIGHT) {
+			pacman.updateDirection('R');
+		}
+		
+		
 	}
 	
 }
