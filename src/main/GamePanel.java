@@ -5,7 +5,6 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Image;
-import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
@@ -33,7 +32,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 		int velocityX = 0;
 		int velocityY = 0;
 		
-		public Rectangle solidArea = new Rectangle(0, 0, 32, 32);
+//		public Rectangle solidArea = new Rectangle(0, 0, 32, 32);
 		
 		Block(Image image, int x, int y, int width, int height){
 			this.image = image;
@@ -115,14 +114,24 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 	private Image orangeGhostImage;
 	private Image pinkGhostImage;
 	private Image redGhostImage;
+	private Image cherryImage;
+	private Image scaredGhostImage;
 	
 	private Image pacmanUpImage;
 	private Image pacmanDownImage;
 	private Image pacmanLeftImage;
 	private Image pacmanRightImage;
 	
+	private Image pacmanUpRedImage;
+	private Image pacmanDownRedImage;
+	private Image pacmanLeftRedImage;
+	private Image pacmanRightRedImage;
+	
+	private int superPowerCounter = 0;
+	
     //X = wall, O = skip, P = pac man, ' ' = food
     //Ghosts: b = blue, o = orange, p = pink, r = red
+	//SuperPower: C = cherry
 	private String[] tileMap = {
         "XXXXXXXXXXXXXXXXXXX",
         "X        X        X",
@@ -143,7 +152,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
         "XX X X XXXXX X X XX",
         "X    X   X   X    X",
         "X XXXXXX X XXXXXX X",
-        "X                 X",
+        "X        c        X",
         "XXXXXXXXXXXXXXXXXXX" 
 	};
 	
@@ -151,6 +160,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 	HashSet<Block> foods;
 	HashSet<Block> ghosts;
 	Block pacman;
+	HashSet<Block> cherries;
+	HashSet<Block> portals;
 	
 	Timer gameLoop;
 	
@@ -160,6 +171,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 	int score = 0;
 	int lives = 3;
 	boolean gameOver = false;
+	boolean superCharged = false;
 	
 	public GamePanel() {
 
@@ -174,12 +186,21 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 		orangeGhostImage = getImage("/main/res/orangeGhost");
 		pinkGhostImage = getImage("/main/res/pinkGhost");
 		redGhostImage = getImage("/main/res/redGhost");
+		cherryImage = getImage("/main/res/cherry");
+		scaredGhostImage = getImage("/main/res/scaredGhost");
 		
+
 		//Load player images
 		pacmanUpImage = getImage("/main/res/pacmanUp");
 		pacmanDownImage = getImage("/main/res/pacmanDown");
 		pacmanLeftImage = getImage("/main/res/pacmanLeft");
 		pacmanRightImage = getImage("/main/res/pacmanRight");
+		
+		//Load player Supercharged images
+		pacmanUpRedImage = getImage("/main/res/pacmanUpRed");
+		pacmanDownRedImage = getImage("/main/res/pacmanDownRed");
+		pacmanLeftRedImage = getImage("/main/res/pacmanLeftRed");
+		pacmanRightRedImage = getImage("/main/res/pacmanRightRed");
 		
 		loadMap();
 		for(Block ghost : ghosts) {
@@ -196,8 +217,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 		walls =  new HashSet<Block>();
 		foods =  new HashSet<Block>();
 		ghosts =  new HashSet<Block>();
+		cherries = new HashSet<Block>();
+		portals = new HashSet<Block>();
 		
-		//Draw tiles one by one
+		//load tiles one by one
 		for(int r = 0; r < rowCount; r++) {
 			//r is for Rows
 			for(int c = 0; c < colCount; c++) {
@@ -240,6 +263,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 					Block food = new Block(null, x+14, y+14, 4, 4);
 					foods.add(food);
 				}
+				else if(tileMapChar == 'c') { //Cherry
+					Block cherry = new Block(cherryImage, x, y, tileSize, tileSize);
+					cherries.add(cherry);
+				}
+				else if(tileMapChar == 'O') { //Portals
+					Block portal = new Block(null, x, y, tileSize, tileSize);
+					portals.add(portal);
+				}
 			}
 		}
 	}
@@ -266,8 +297,17 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 		g.drawImage(pacman.image, pacman.x, pacman.y, pacman.width, pacman.height, null);
 		
 		//Draw enemy
-		for(Block ghost : ghosts) {
-			g.drawImage(ghost.image, ghost.x, ghost.y, ghost.width, ghost.height, null);
+		if(superCharged == false) {
+			//If ghost can attack pacman
+			for(Block ghost : ghosts) {
+				g.drawImage(ghost.image, ghost.x, ghost.y, ghost.width, ghost.height, null);
+			}
+		}
+		else if(superCharged) {
+			//If pacman can eat ghost
+			for(Block ghost : ghosts) {
+				g.drawImage(scaredGhostImage, ghost.x, ghost.y, ghost.width, ghost.height, null);
+			}
 		}
 		
 		//Draw enviro
@@ -279,6 +319,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 		g.setColor(Color.white);
 		for(Block food : foods) {
 			g.fillRect(food.x, food.y, food.width, food.height);
+		}
+		
+		//Draw PowerFood
+		for(Block cherry : cherries) {
+			g.drawImage(cherry.image, cherry.x, cherry.y, cherry.width, cherry.height, null);
 		}
 		
 		//Draw score
@@ -294,7 +339,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 	public void move() {
 		pacman.x += pacman.velocityX;
 		pacman.y += pacman.velocityY;
-		isOutsideMap(pacman);
 		
 		//Check wall collision
 		for(Block wall : walls) {
@@ -305,16 +349,38 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 			}
 		}
 		
-		//Check ghost collision
-		for(Block ghost : ghosts) {
-			if(collision(ghost, pacman)) {
-				lives -= 1;
-				if(lives == 0) {
-					gameOver = true;
-					return;
-				}
-				resetPositions();
+		//Check portal collision
+		for(Block portal : portals) {
+			if(collision(pacman, portal) && portal.x == 0) {
+				pacman.x = tileSize*colCount-tileSize;
 			}
+			else if(collision(pacman, portal) && portal.x == tileSize*colCount-tileSize) {
+				pacman.x = tileSize;
+			}
+		}
+		
+		//Check ghost collision when not in superCharge mode
+		Block ghostEaten = null;
+		for(Block ghost : ghosts) {
+			if(superCharged == false) {
+				if(collision(ghost, pacman)) {
+					lives -= 1;
+					if(lives == 0) {
+						gameOver = true;
+						return;
+					}
+					resetPositions();
+				}
+			}
+			if(superCharged == true) {
+				if(collision(ghost, pacman))
+				{
+					ghostEaten = ghost;
+					score += 100;
+				}
+			}
+
+
 			if(ghost.y == tileSize*9 && ghost.direction != 'U' && ghost.direction != 'D' && ghost.direction == 'L') {
 				ghost.updateDirection('U');
 			}
@@ -329,7 +395,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 			}
 			ghost.x += ghost.velocityX;
 			ghost.y += ghost.velocityY;
-			isOutsideMap(ghost);
 			for(Block wall : walls) {
 				if(collision(ghost, wall)) {
 					ghost.x -= ghost.velocityX;
@@ -339,6 +404,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 				}
 			}
 		}
+		ghosts.remove(ghostEaten);
 		
 		//Check food collision
 		Block foodEaten = null;
@@ -354,6 +420,38 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 			loadMap();
 			resetPositions();
 		}
+		
+		//Check cherry collision
+		Block cherryEaten = null;
+		for(Block cherry : cherries) {
+			if(collision(pacman, cherry)) {
+				cherryEaten = cherry;
+				superCharged = true;
+				score += 100;
+				
+				if(pacman.direction == 'U') {
+					pacman.image = pacmanUpRedImage;
+				}
+				if(pacman.direction == 'D') {
+					pacman.image = pacmanDownRedImage;
+				}
+				if(pacman.direction == 'L') {
+					pacman.image = pacmanLeftRedImage;
+				}
+				if(pacman.direction == 'R') {
+					pacman.image = pacmanRightRedImage;
+				}
+			}
+			cherries.remove(cherryEaten);
+		}
+		
+		if(superCharged) {
+			superPowerCounter++;
+			if(superPowerCounter > 200) {
+				superCharged = false;
+				superPowerCounter = 0;
+			}
+		}
 	}
 	
 	public boolean collision(Block a, Block b) {
@@ -363,6 +461,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 				a.y < b.y + b.height &&
 				a.y + a.height > b.y;
 	}
+	
 	
 	public void resetPositions() {
 		pacman.reset();
@@ -375,16 +474,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 		}
 	}
 	
-	public void isOutsideMap(Block entity) {
-		if(entity.x < 0) {
-			entity.x = (colCount*tileSize)-tileSize;
-			entity.y = tileSize*9;
-		}
-		else if(entity.x > colCount*tileSize-tileSize) {
-			entity.x = 0;
-			entity.y = tileSize*9;
-		}
-	}
 
 	@Override
 	public void actionPerformed(ActionEvent e) {
@@ -433,17 +522,29 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener{
 			pacman.updateDirection('R');
 		}
 		
-		if(pacman.direction == 'U') {
+		if(pacman.direction == 'U' && superCharged == false) {
 			pacman.image = pacmanUpImage;
 		}
-		else if(pacman.direction == 'D') {
+		else if(pacman.direction == 'U' && superCharged) {
+			pacman.image = pacmanUpRedImage;
+		}
+		else if(pacman.direction == 'D' && superCharged == false) {
 			pacman.image = pacmanDownImage;
 		}
-		else if(pacman.direction == 'L') {
+		else if(pacman.direction == 'D' && superCharged) {
+			pacman.image = pacmanDownRedImage;
+		}
+		else if(pacman.direction == 'L' && superCharged == false) {
 			pacman.image = pacmanLeftImage;
 		}
-		else if(pacman.direction == 'R') {
+		else if(pacman.direction == 'L' && superCharged) {
+			pacman.image = pacmanLeftRedImage;
+		}
+		else if(pacman.direction == 'R' && superCharged == false) {
 			pacman.image = pacmanRightImage;
+		}
+		else if(pacman.direction == 'R' && superCharged) {
+			pacman.image = pacmanRightRedImage;
 		}
 		
 	}
